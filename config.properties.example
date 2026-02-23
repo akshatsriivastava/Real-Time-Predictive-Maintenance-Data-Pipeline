@@ -1,0 +1,7 @@
+# AWS IoT Core connection (copy to config.properties and fill in)
+# Get the endpoint from AWS Console: IoT Core → Settings → Device data endpoint
+
+iot.endpoint=YOUR_ENDPOINT.iot.REGION.amazonaws.com
+iot.rootCaPath=certs/AmazonRootCA1.pem
+iot.certPath=certs/certificate.pem.crt
+iot.privateKeyPath=certs/private.pem.key

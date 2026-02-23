@@ -1,0 +1,99 @@
+# Phase 3: Kinesis → S3 (Data Lake)
+# Firehose reads from the Phase 2 Kinesis stream and delivers telemetry to S3.
+# Requires Phase 2 stack (predictive-maintenance-phase2) to be deployed first.
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Predictive Maintenance Pipeline - Phase 3: Kinesis to S3 Data Lake"
+
+Parameters:
+  Phase2StackName:
+    Type: String
+    Default: predictive-maintenance-phase2
+    Description: Phase 2 stack name (for Kinesis stream export)
+  DataLakeBucketNameOverride:
+    Type: String
+    Default: ""
+    Description: S3 bucket name override (optional; default uses account ID for uniqueness)
+
+Conditions:
+  HasCustomBucketName: !Not [!Equals [!Ref DataLakeBucketNameOverride, ""]]
+
+Resources:
+  DataLakeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If
+        - HasCustomBucketName
+        - !Ref DataLakeBucketNameOverride
+        - !Sub "predictive-maintenance-datalake-${AWS::AccountId}"
+
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: predictive-maintenance-firehose
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+
+  FirehoseRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: FirehoseKinesisAndS3
+      Roles:
+        - !Ref FirehoseRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - kinesis:DescribeStream
+              - kinesis:GetShardIterator
+              - kinesis:GetRecords
+              - kinesis:ListShards
+            Resource: !ImportValue
+              Fn::Sub: "${Phase2StackName}-StreamArn"
+          - Effect: Allow
+            Action:
+              - s3:AbortMultipartUpload
+              - s3:GetBucketLocation
+              - s3:GetObject
+              - s3:ListBucket
+              - s3:ListBucketMultipartUploads
+              - s3:PutObject
+            Resource:
+              - !GetAtt DataLakeBucket.Arn
+              - !Sub "${DataLakeBucket.Arn}/*"
+
+  TelemetryFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    DependsOn: FirehoseRolePolicy
+    Properties:
+      DeliveryStreamName: predictive-maintenance-telemetry-firehose
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !ImportValue
+          Fn::Sub: "${Phase2StackName}-StreamArn"
+        RoleARN: !GetAtt FirehoseRole.Arn
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt DataLakeBucket.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+        Prefix: telemetry/
+        ErrorOutputPrefix: telemetry_errors/
+        BufferingHints:
+          SizeInMBs: 5
+          IntervalInSeconds: 300
+        CompressionFormat: GZIP
+
+Outputs:
+  DataLakeBucketName:
+    Description: S3 bucket for telemetry data lake
+    Value: !Ref DataLakeBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
+  FirehoseStreamName:
+    Description: Firehose delivery stream name
+    Value: !Ref TelemetryFirehose

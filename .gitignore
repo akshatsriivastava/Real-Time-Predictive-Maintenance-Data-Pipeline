@@ -1,0 +1,32 @@
+.venv/
+__pycache__/
+certs/
+target/
+*.joblib
+.DS_Store
+
+# Existing rules below (kept for clarity/compatibility)
+
+# Maven
+pom.xml.tag
+.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.properties
+
+# Project-local JDK (optional; remove if you want to track it)
+.jdk/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.class
+*.log
+
+# Config with endpoint/cert paths (do not commit real values)
+config.properties
+
+# Certs (never commit private keys)
+certs/*.pem
+certs/*.key
+certs/*.crt
+!certs/.gitkeep

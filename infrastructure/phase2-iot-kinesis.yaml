@@ -1,0 +1,81 @@
+# Phase 2: AWS IoT Core → Kinesis Data Streams
+# Forwards MQTT telemetry from topic 'factory/telemetry' to Kinesis for downstream processing.
+# Deploy: aws cloudformation deploy --template-file phase2-iot-kinesis.yaml --stack-name predictive-maintenance-phase2 --capabilities CAPABILITY_NAMED_IAM
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Predictive Maintenance Pipeline - Phase 2: IoT to Kinesis"
+
+Parameters:
+  StreamName:
+    Type: String
+    Default: predictive-maintenance-telemetry
+    Description: Kinesis stream name for factory telemetry
+  IoTTelemetryTopic:
+    Type: String
+    Default: factory/telemetry
+    Description: MQTT topic to ingest (must match simulator publish topic)
+
+Resources:
+  TelemetryStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Ref StreamName
+      RetentionPeriodHours: 24
+      StreamModeDetails:
+        StreamMode: ON_DEMAND
+
+  IoTKinesisRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: predictive-maintenance-iot-kinesis
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: iot.amazonaws.com
+            Action: sts:AssumeRole
+
+  IoTKinesisRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: PutToKinesis
+      Roles:
+        - !Ref IoTKinesisRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - kinesis:PutRecord
+              - kinesis:PutRecords
+            Resource: !GetAtt TelemetryStream.Arn
+
+  IoTRuleTelemetryToKinesis:
+    Type: AWS::IoT::TopicRule
+    DependsOn: IoTKinesisRolePolicy
+    Properties:
+      RuleName: TelemetryToKinesisPhase2
+      TopicRulePayload:
+        RuleDisabled: false
+        Sql: !Sub "SELECT * FROM '${IoTTelemetryTopic}'"
+        Actions:
+          - Kinesis:
+              StreamName: !Ref TelemetryStream
+              RoleArn: !GetAtt IoTKinesisRole.Arn
+              PartitionKey: "${payload().machineId}"
+
+Outputs:
+  KinesisStreamName:
+    Description: Kinesis stream name for telemetry
+    Value: !Ref TelemetryStream
+    Export:
+      Name: !Sub "${AWS::StackName}-StreamName"
+  KinesisStreamArn:
+    Description: Kinesis stream ARN
+    Value: !GetAtt TelemetryStream.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-StreamArn"
+  IoTRuleName:
+    Description: IoT rule name
+    Value: !Ref IoTRuleTelemetryToKinesis
